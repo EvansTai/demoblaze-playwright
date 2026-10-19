@@ -1,0 +1,62 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      grep:
+        description: 'Tag filter, e.g. @smoke or @regression (empty = all)'
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 1 * * *' # Run daily at 08:00 ICT (01:00 UTC).
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npx playwright test --project=api
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: report-api, path: playwright-report/, retention-days: 14 }
+
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, firefox, webkit, mobile-chrome, mobile-safari]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps
+      - name: Run tests
+        run: npx playwright test --project=${{ matrix.project }} ${{ github.event.inputs.grep && format('--grep {0}', github.event.inputs.grep) || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: report-${{ matrix.project }}, path: playwright-report/, retention-days: 14 }
+
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --project=perf
+        env: { PERF_MAX_LOAD_MS: 10000 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: report-perf, path: playwright-report/, retention-days: 14 }

@@ -1,0 +1,691 @@
+--- a/src/pages/BasePage.ts
++++ b/src/pages/BasePage.ts
+@@ -4,7 +4,7 @@
+ const SHOWN = /display:\s*block/;
+ const HIDDEN = /display:\s*none/;
+ 
+-/** Shared navbar + helpers for every DemoBlaze page. */
++/** Shared navigation and helpers for DemoBlaze pages. */
+ export abstract class BasePage {
+   readonly navToggler: Locator;
+   readonly navCollapse: Locator;
+@@ -26,7 +26,7 @@
+     this.welcomeUser = page.locator('#nameofuser');
+   }
+ 
+-  /** On mobile viewports the navbar is collapsed behind a hamburger button. */
++  /** Expands the navigation menu if it is collapsed on a mobile viewport. */
+   async openNavIfCollapsed(): Promise<void> {
+     if (await this.navToggler.isVisible()) {
+       if (!(await this.navCollapse.evaluate((el) => el.classList.contains('show')))) {
+@@ -52,8 +52,8 @@
+   }
+ 
+   /*
+-   * Login state is asserted via the inline `display` style that DemoBlaze's JS toggles
+-   * (jQuery show/hide). This works on desktop and on mobile where the navbar is collapsed.
++   * Check the inline `display` styles that DemoBlaze updates with jQuery show/hide.
++   * These styles reflect login state even when the mobile navigation menu is collapsed.
+    */
+   async expectLoggedInAs(username: string): Promise<void> {
+     await expect(this.welcomeUser).toHaveText(`Welcome ${username}`);
+@@ -69,7 +69,7 @@
+     await expect(this.welcomeUser).toHaveAttribute('style', HIDDEN);
+   }
+ 
+-  /** Run an action that triggers a native alert and return the alert text. */
++  /** Runs an action, accepts the resulting browser alert, and returns its message. */
+   acceptAlert(action: () => Promise<unknown>): Promise<string> {
+     return acceptNextDialog(this.page, action);
+   }
+--- a/src/pages/CartPage.ts
++++ b/src/pages/CartPage.ts
+@@ -24,7 +24,7 @@
+     return this.rows.filter({ has: this.page.locator('td:nth-child(2)', { hasText: productName }) });
+   }
+ 
+-  /** Waits until the cart shows exactly `count` rows (items are rendered asynchronously). */
++  /** Waits for the cart to finish rendering the expected number of items. */
+   async expectItemCount(count: number): Promise<void> {
+     await expect(this.rows).toHaveCount(count);
+   }
+--- a/src/pages/HomePage.ts
++++ b/src/pages/HomePage.ts
+@@ -18,7 +18,7 @@
+ 
+   async filterByCategory(category: Category): Promise<void> {
+     await this.page.locator('#itemc', { hasText: category }).click();
+-    // Product list is re-rendered asynchronously; callers wait on the product they need.
++    // The product list updates asynchronously. Callers still need to wait for their target product.
+     await expect(this.productCards.first()).toBeVisible();
+   }
+ 
+--- a/src/pages/LoginModal.ts
++++ b/src/pages/LoginModal.ts
+@@ -32,7 +32,7 @@
+     await this.passwordInput.fill(password);
+   }
+ 
+-  /** Successful login: modal closes and page reloads with the user's session. */
++  /** Logs in through the UI and waits for the navigation to show the signed-in user. */
+   async login(username: string, password: string): Promise<void> {
+     await this.open();
+     await this.fill(username, password);
+@@ -43,7 +43,7 @@
+     await this.expectLoggedInAs(username);
+   }
+ 
+-  /** Failed login: returns the alert text shown by the site. */
++  /** Attempts to log in and returns the validation or error alert message. */
+   async loginExpectingAlert(username: string, password: string): Promise<string> {
+     await this.open();
+     await this.fill(username, password);
+--- a/src/pages/PlaceOrderModal.ts
++++ b/src/pages/PlaceOrderModal.ts
+@@ -39,7 +39,7 @@
+     }
+   }
+ 
+-  /** Purchase with valid data: returns parsed SweetAlert confirmation. */
++  /** Submits the order and returns the details from the SweetAlert confirmation. */
+   async purchase(): Promise<PurchaseConfirmation> {
+     await this.purchaseButton.click();
+     await expect(this.confirmation).toBeVisible();
+@@ -55,15 +55,14 @@
+     };
+   }
+ 
+-  /** Purchase with invalid data: returns native alert text. */
++  /** Submits the order and returns the browser alert shown for invalid data. */
+   async purchaseExpectingAlert(): Promise<string> {
+     return this.acceptAlert(() => this.purchaseButton.click());
+   }
+ 
+   async confirmAndClose(): Promise<void> {
+     await this.confirmationOk.click();
+-    // The site is supposed to redirect to index.html, but the redirect is not reliable,
+-    // so only assert that the confirmation is dismissed.
++    // The redirect to index.html is unreliable, so check only that the confirmation closes.
+     await expect(this.confirmation).toBeHidden();
+   }
+ }
+--- a/src/pages/ProductPage.ts
++++ b/src/pages/ProductPage.ts
+@@ -20,14 +20,14 @@
+     await expect(this.name).not.toBeEmpty();
+   }
+ 
+-  /** "$360 *includes tax" -> 360 */
++  /** Extracts the numeric price from text such as "$360 *includes tax". */
+   async getPrice(): Promise<number> {
+     await expect(this.price).toContainText('$');
+     const text = await this.price.innerText();
+     return Number(text.match(/\$(\d+)/)?.[1]);
+   }
+ 
+-  /** Clicks Add to cart and returns the alert text ("Product added" / "Product added."). */
++  /** Adds the product to the cart and returns the alert message, including any trailing period. */
+   async addToCart(): Promise<string> {
+     await expect(this.name).not.toBeEmpty();
+     return this.acceptAlert(() => this.addToCartButton.click());
+--- a/src/pages/SignupModal.ts
++++ b/src/pages/SignupModal.ts
+@@ -21,7 +21,7 @@
+     await expect(this.usernameInput).toBeEditable();
+   }
+ 
+-  /** Signs up through the UI and returns the alert text. */
++  /** Creates an account through the UI and returns the alert message. */
+   async signup(username: string, password: string): Promise<string> {
+     await this.open();
+     await this.usernameInput.fill(username);
+--- a/src/fixtures/test-fixtures.ts
++++ b/src/fixtures/test-fixtures.ts
+@@ -12,11 +12,11 @@
+ 
+ type Fixtures = {
+   api: DemoblazeApi;
+-  /** A brand-new account created via API for this test only. */
++  /** A new account created through the API for each test. */
+   user: TestUser;
+-  /** A second independent account (for isolation / multi-account tests). */
++  /** A separate account for tests that need two users. */
+   userB: TestUser;
+-  /** Page already authenticated as `user` (token injected as cookie, no UI login). */
++  /** A page authenticated as `user` by setting the session cookie. */
+   loggedInPage: Page;
+   homePage: HomePage;
+   loginModal: LoginModal;
+@@ -28,9 +28,9 @@
+ 
+ export const test = base.extend<Fixtures>({
+   /*
+-   * DemoBlaze identifies a guest cart by the browser cookie string. Opening a product page
+-   * directly (without visiting Home first) leaves the cookie empty, so all such guests share
+-   * one cart. Seeding a unique `user` cookie keeps every test's guest cart isolated.
++   * DemoBlaze uses the browser's cookie string to identify a guest cart.
++   * Visiting a product page before Home can leave that string empty and cause tests
++   * to share a cart. Set a unique `user` cookie to give each test its own guest cart.
+    */
+   context: async ({ context }, use) => {
+     await context.addCookies([{ name: 'user', value: randomUUID(), url: env.baseUrl }]);
+@@ -44,7 +44,7 @@
+   user: async ({ api }, use) => {
+     const user = await createUser(api);
+     await use(user);
+-    await api.deleteCart(user.username); // cleanup
++    await api.deleteCart(user.username); // Clear the account’s cart after the test.
+   },
+ 
+   userB: async ({ api }, use) => {
+@@ -68,7 +68,7 @@
+ 
+ export { expect };
+ 
+-/** Signs up a new account via API (username can be overridden for special-character tests). */
++/** Creates an account through the API. Pass a username to test specific characters. */
+ export async function createUser(api: DemoblazeApi, prefix = 'qa', username?: string): Promise<TestUser> {
+   const user = username ? { username, password: newUser().password } : newUser(prefix);
+   const res = await api.signup(user.username, user.password);
+@@ -78,14 +78,14 @@
+   return user;
+ }
+ 
+-/** Logs a browser context in by injecting the auth cookie (no UI login). Returns the token. */
++/** Authenticates the browser context by setting the session cookie and returns the token. */
+ export async function authenticate(context: BrowserContext, api: DemoblazeApi, user: TestUser): Promise<string> {
+   const token = await api.getToken(user.username, user.password);
+   await context.addCookies([{ name: 'tokenp_', value: token, url: env.baseUrl }]);
+   return token;
+ }
+ 
+-/** Sets an arbitrary (e.g. tampered) auth cookie. */
++/** Sets the session cookie to the supplied token, including invalid tokens for negative tests. */
+ export async function setAuthCookie(context: BrowserContext, token: string): Promise<void> {
+   await context.addCookies([{ name: 'tokenp_', value: token, url: env.baseUrl }]);
+ }
+--- a/src/api/DemoblazeApi.ts
++++ b/src/api/DemoblazeApi.ts
+@@ -6,9 +6,8 @@
+ export interface CartItem { cookie: string; id: string; prod_id: number; }
+ 
+ /**
+- * Thin client for https://api.demoblaze.com.
+- * Used for test data setup (sign up, login, clean cart) and for API tests.
+- * Note: DemoBlaze sends the password Base64-encoded, the same way the web client does.
++ * API client for DemoBlaze test setup, cart cleanup, and API tests.
++ * Passwords are Base64-encoded to match requests from the web client.
+  */
+ export class DemoblazeApi {
+   constructor(private readonly request: APIRequestContext, private readonly baseUrl = env.apiUrl) {}
+@@ -25,7 +24,7 @@
+     return this.post('/login', { username, password: encodePassword(password) });
+   }
+ 
+-  /** Returns the auth token (value stored in the `tokenp_` cookie). Throws on failure. */
++  /** Returns the login token used by the `tokenp_` cookie. Throws if the response contains no token. */
+   async getToken(username: string, password: string): Promise<string> {
+     const res = await this.login(username, password);
+     const body = await res.json();
+@@ -52,7 +51,7 @@
+     return this.post('/addtocart', { id: randomUUID(), cookie: token, prod_id: prodId, flag: true });
+   }
+ 
+-  /** Product details: { id, title, price, desc, cat, img } */
++  /** Fetches product details by ID. The return type exposes the fields used by the tests. */
+   async getProduct(prodId: number): Promise<{ id: number; title: string; price: number }> {
+     return (await this.post('/view', { id: String(prodId) })).json();
+   }
+--- a/src/utils/data.ts
++++ b/src/utils/data.ts
+@@ -4,11 +4,11 @@
+ 
+ export const encodePassword = (password: string): string => Buffer.from(password, 'utf8').toString('base64');
+ 
+-/** Unique username per test so tests can run in parallel without sharing state. */
++/** Generates a username for creating separate accounts in parallel tests. */
+ export const uniqueUsername = (prefix = 'qa'): string =>
+   `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+ 
+ export const newUser = (prefix?: string): TestUser => ({ username: uniqueUsername(prefix), password: env.testPassword });
+ 
+-/** "Amount: 360 USD" style text -> number */
++/** Extracts the numeric amount from text such as "Amount: 360 USD". */
+ export const parseAmount = (text: string): number => Number(text.match(/Amount:\s*(\d+)/)?.[1] ?? NaN);
+--- a/src/utils/dialog.ts
++++ b/src/utils/dialog.ts
+@@ -1,13 +1,11 @@
+ import { Page } from '@playwright/test';
+ 
+ /**
+- * DemoBlaze reports results with native window.alert().
+- * Registers a one-time handler that accepts the alert immediately, runs `action`
+- * and returns the alert message.
++ * Registers a handler before running `action`, accepts the next browser alert,
++ * and returns its message. DemoBlaze uses window.alert() for validation and feedback.
+  *
+- * The alert must be accepted inside the handler: for alerts raised synchronously
+- * in an onclick handler (e.g. empty-field validation), the click() call itself
+- * does not resolve until the dialog is closed.
++ * Accept the alert inside the handler: if an onclick handler opens it synchronously,
++ * click() cannot finish until the alert closes.
+  */
+ export async function acceptNextDialog(page: Page, action: () => Promise<unknown>, timeout = 15_000): Promise<string> {
+   let onDialog!: (d: import('@playwright/test').Dialog) => Promise<void>;
+@@ -29,9 +27,8 @@
+ }
+ 
+ /**
+- * Auto-accepts every native alert on the page and records its message.
+- * Useful when a page may raise several alerts (e.g. on load + on click) or when
+- * a test asserts that NO alert appeared.
++ * Accepts browser alerts and records their messages in the returned array as they arrive.
++ * Use this when a page may show multiple alerts or when checking that no alert appears.
+  */
+ export function collectDialogs(page: Page): string[] {
+   const messages: string[] = [];
+--- a/src/utils/known-bug.ts
++++ b/src/utils/known-bug.ts
+@@ -1,10 +1,9 @@
+ import { test } from '@playwright/test';
+ 
+ /**
+- * Marks the current test as an expected failure caused by a confirmed product defect.
+- * - The suite stays green while the bug exists.
+- * - The test turns red ("expected to fail, but passed") once the bug is fixed,
+- *   which is the signal to remove this marker.
++ * Marks the current test as an expected failure for a confirmed product bug.
++ * A failure is treated as expected while this marker is present. If the test passes,
++ * Playwright reports an unexpected pass; review the fix and remove the marker.
+  */
+ export function knownBug(description: string): void {
+   test.info().annotations.push({ type: 'known-bug', description });
+--- a/tests/ui/login.spec.ts
++++ b/tests/ui/login.spec.ts
+@@ -1,7 +1,7 @@
+ /**
+- * Automation of sheet "Login" in DemoBlaze_TestCases_EN.xlsx.
+- * Each test title starts with the TestCaseID from the sheet (Case_xx).
+- * Tests marked with knownBug() document confirmed defects (expected failures).
++ * Automated tests for the "Login" sheet in DemoBlaze_TestCases_EN.xlsx.
++ * Test titles keep the sheet’s case IDs (Case_xx) for traceability.
++ * knownBug() marks tests for confirmed product bugs as expected failures.
+  */
+ import { test, expect, createUser, setAuthCookie } from '../../src/fixtures/test-fixtures';
+ import { LoginModal } from '../../src/pages/LoginModal';
+@@ -16,7 +16,7 @@
+     await homePage.open();
+   });
+ 
+-  // ---------------------------------------------------------------- Critical
++  // Critical-priority cases.
+   test('Case_01: Log in successfully with a valid username and password', { tag: ['@smoke', '@regression'] }, async ({ loginModal, user }) => {
+     await loginModal.login(user.username, user.password);
+     await expect(loginModal.modal).toBeHidden();
+@@ -48,7 +48,7 @@
+     await loginModal.expectLoggedOut();
+   });
+ 
+-  // ---------------------------------------------------------------- High
++  // High-priority cases.
+   test('Case_06: Verify UI of the Login modal', { tag: '@regression' }, async ({ loginModal }) => {
+     await loginModal.open();
+     await expect(loginModal.title).toHaveText('Log in');
+@@ -117,7 +117,7 @@
+     await loginModal.expectLoggedOut();
+   });
+ 
+-  // ---------------------------------------------------------------- Medium
++  // Medium-priority cases.
+   test('Case_16: Username is case-sensitive', { tag: '@regression' }, async ({ loginModal, user }) => {
+     expect(await loginModal.loginExpectingAlert(user.username.toUpperCase(), user.password)).toBe(MSG.userNotExist);
+     await loginModal.expectLoggedOut();
+@@ -165,7 +165,7 @@
+     await expect(loginModal.modal).toBeHidden();
+ 
+     await loginModal.open();
+-    await loginModal.modal.click({ position: { x: 5, y: 5 } }); // backdrop area outside the dialog
++    await loginModal.modal.click({ position: { x: 5, y: 5 } }); // Click the backdrop outside the dialog.
+     await expect(loginModal.modal).toBeHidden();
+     await loginModal.expectLoggedOut();
+   });
+@@ -192,7 +192,7 @@
+     const dialogs = collectDialogs(page);
+     await loginModal.open();
+     await loginModal.fill(user.username, user.password);
+-    await loginModal.submitButton.click({ clickCount: 3, delay: 50 }).catch(() => undefined); // page reloads mid-clicks
++    await loginModal.submitButton.click({ clickCount: 3, delay: 50 }).catch(() => undefined); // A page reload may interrupt the remaining clicks.
+     await loginModal.expectLoggedInAs(user.username);
+     expect(dialogs, 'no error alert expected').toEqual([]);
+   });
+@@ -210,7 +210,7 @@
+     await loginModal.fill(`<script>alert('xss')</script>`, 'Test@123');
+     await loginModal.submitButton.click();
+     await expect.poll(() => dialogs.length).toBeGreaterThan(0);
+-    await page.waitForTimeout(1_000); // give an injected script a chance to fire
++    await page.waitForTimeout(1_000); // Allow time for the injected script to run before checking the alerts.
+     expect(dialogs).toEqual([MSG.userNotExist]);
+   });
+ 
+@@ -225,14 +225,14 @@
+   });
+ 
+   test('Case_31: Login works on all supported browsers', { tag: ['@regression', '@cross-browser'] }, async ({ loginModal, user }) => {
+-    // Runs once per browser project (chromium, firefox, webkit) defined in playwright.config.ts
++    // Runs on Chromium, Firefox, and WebKit through the projects in playwright.config.ts.
+     await loginModal.login(user.username, user.password);
+     await loginModal.logout();
+   });
+ 
+   test('Case_32: Switching accounts in another tab is reflected in all tabs', { tag: '@regression' }, async ({ page, api, loginModal, productPage, user, userB }) => {
+     await loginModal.login(user.username, user.password);
+-    await productPage.open(1); // tab 1 shows a product page while logged in as A
++    await productPage.open(1); // Keep the first tab open as user A.
+ 
+     const tab2 = await page.context().newPage();
+     const login2 = new LoginModal(tab2);
+@@ -240,7 +240,7 @@
+     await login2.logout();
+     await login2.login(userB.username, userB.password);
+ 
+-    // back to tab 1 (stale UI, not reloaded) and add the product
++    // Add the product from the first tab without reloading its stale login state.
+     await productPage.addToCart();
+     await page.reload();
+     await loginModal.expectLoggedInAs(userB.username);
+@@ -262,9 +262,9 @@
+     expect(pageErrors, 'no JavaScript error expected').toEqual([]);
+   });
+ 
+-  // ---------------------------------------------------------------- Low / Boundary
++  // Low-priority and boundary cases.
+   test('Case_34: Log in with a 1-character username', { tag: '@regression' }, async ({ api, loginModal }) => {
+-    // Latin 1-char usernames are already taken on the shared backend, so use a random CJK character.
++    // Use a random CJK character to reduce username collisions on the shared backend.
+     let user;
+     for (let i = 0; i < 5 && !user; i++) {
+       const name = String.fromCodePoint(0x4e00 + Math.floor(Math.random() * 20_000));
+--- a/tests/ui/cart.spec.ts
++++ b/tests/ui/cart.spec.ts
+@@ -1,7 +1,7 @@
+ /**
+- * Automation of sheet "Shopping Cart" in DemoBlaze_TestCases_EN.xlsx.
+- * Each test title starts with the TestCaseID from the sheet (Case_xx).
+- * Tests marked with knownBug() document confirmed defects (expected failures).
++ * Automated tests for the "Shopping Cart" sheet in DemoBlaze_TestCases_EN.xlsx.
++ * Test titles keep the sheet’s case IDs (Case_xx) for traceability.
++ * knownBug() marks tests for confirmed product bugs as expected failures.
+  */
+ import { test, expect, authenticate, setAuthCookie } from '../../src/fixtures/test-fixtures';
+ import { DemoblazeApi } from '../../src/api/DemoblazeApi';
+@@ -15,18 +15,18 @@
+ import products from '../../test-data/products.json';
+ import order from '../../test-data/order.json';
+ 
+-const S6 = products.samsungS6; // id 1, $360
++const S6 = products.samsungS6; // Samsung Galaxy S6: product ID 1, priced at $360.
+ const NOKIA_ID = 2;
+ const NO_CONFIRMATION_TIMEOUT = 5_000;
+ 
+-/** Puts products into a user's cart via API (fast setup) and returns the auth token. */
++/** Adds products to the user’s cart through the API and returns the session token. */
+ async function seedCart(api: DemoblazeApi, user: TestUser, productIds: number[]): Promise<string> {
+   const token = await api.getToken(user.username, user.password);
+   for (const id of productIds) expect((await api.addToCart(token, id)).ok()).toBeTruthy();
+   return token;
+ }
+ 
+-/** Opens the cart (expecting `items` rows) and the Place Order modal. */
++/** Waits for the expected cart items, then opens the Place Order modal. */
+ async function openPlaceOrder(cartPage: CartPage, modal: PlaceOrderModal, items: number): Promise<void> {
+   await cartPage.open();
+   await cartPage.expectItemCount(items);
+@@ -35,7 +35,7 @@
+ }
+ 
+ test.describe('Shopping Cart', { tag: '@cart' }, () => {
+-  // ---------------------------------------------------------------- Critical
++  // Critical-priority cases.
+   test('Case_01: Guest adds a product to cart successfully', { tag: ['@smoke', '@regression'] }, async ({ productPage, cartPage }) => {
+     await productPage.open(S6.id);
+     expect(await productPage.addToCart()).toBe('Product added');
+@@ -107,7 +107,7 @@
+     await cartPage.expectItemCount(1);
+   });
+ 
+-  // ---------------------------------------------------------------- High
++  // High-priority cases.
+   test('Case_07: Verify product detail page content', { tag: '@regression' }, async ({ productPage }) => {
+     await productPage.open(S6.id);
+     await expect(productPage.name).toHaveText(S6.name);
+@@ -234,7 +234,7 @@
+     const tokenA = await seedCart(api, user, [S6.id]);
+     expect(await api.getCartItems(tokenA)).toHaveLength(1);
+ 
+-    await cartPage.open(); // guest
++    await cartPage.open(); // Open the cart as a guest.
+     await cartPage.expectItemCount(0);
+ 
+     await authenticate(page.context(), api, userB);
+@@ -254,7 +254,7 @@
+     await expect(placeOrderModal.confirmation).toBeHidden({ timeout: NO_CONFIRMATION_TIMEOUT });
+   });
+ 
+-  // ---------------------------------------------------------------- Medium
++  // Medium-priority cases.
+   test('Case_20: Deleting the last item leaves an empty cart with total 0', { tag: '@regression' }, async ({ loggedInPage, api, user, cartPage }) => {
+     knownBug('Total is blank instead of 0 when the cart becomes empty');
+     void loggedInPage;
+@@ -366,7 +366,7 @@
+ 
+   test('Case_31: Add to cart with a malformed auth token is rejected', { tag: ['@regression', '@security'] }, async ({ page, productPage }) => {
+     await setAuthCookie(page.context(), 'abc123');
+-    const dialogs = collectDialogs(page); // the page itself also alerts on load because of the bad token
++    const dialogs = collectDialogs(page); // Also capture the alert shown on page load for the invalid token.
+     await productPage.open(S6.id);
+     const before = dialogs.length;
+     await productPage.addToCartButton.click();
+@@ -397,7 +397,7 @@
+   });
+ 
+   test('Case_34: Add to cart and Place order work on all supported browsers', { tag: ['@regression', '@cross-browser'] }, async ({ loggedInPage, productPage, cartPage, placeOrderModal }) => {
+-    // Runs once per browser project (chromium, firefox, webkit) defined in playwright.config.ts
++    // Runs on Chromium, Firefox, and WebKit through the projects in playwright.config.ts.
+     void loggedInPage;
+     await productPage.open(S6.id);
+     await productPage.addToCart();
+@@ -414,11 +414,11 @@
+     await cartPage.open();
+     await cartPage.expectItemCount(1);
+ 
+-    const tab2 = await page.context().newPage(); // tab 2 adds another product
++    const tab2 = await page.context().newPage(); // Use a second tab to add another product.
+     await tab2.goto(`/prod.html?idp_=${NOKIA_ID}`);
+     await acceptNextDialog(tab2, () => tab2.getByRole('link', { name: 'Add to cart' }).click());
+ 
+-    await cartPage.openPlaceOrder(); // tab 1, not reloaded
++    await cartPage.openPlaceOrder(); // Open checkout in the first tab without reloading it.
+     await placeOrderModal.expectOpen();
+     await placeOrderModal.fill(order.valid);
+     expect((await placeOrderModal.purchase()).amount).toBe(S6.price + nokia.price);
+@@ -456,7 +456,7 @@
+     await cartPage.expectItemCount(0);
+   });
+ 
+-  // ---------------------------------------------------------------- Low
++  // Low-priority cases.
+   test('Case_38: Success message is consistent for guest and logged-in user', { tag: '@regression' }, async ({ page, api, user, productPage }) => {
+     knownBug('Guest sees "Product added", logged-in user sees "Product added."');
+     await productPage.open(S6.id);
+@@ -482,7 +482,7 @@
+     knownBug('No length validation on Credit card (12 / 20 digits accepted)');
+     void loggedInPage;
+     await seedCart(api, user, [S6.id]);
+-    for (const card of ['411111111111', '41111111111111111111']) { // 12 and 20 digits must be rejected
++    for (const card of ['411111111111', '41111111111111111111']) { // Both 12-digit and 20-digit card numbers should be rejected.
+       await openPlaceOrder(cartPage, placeOrderModal, 1);
+       await placeOrderModal.fill({ ...order.valid, card });
+       await placeOrderModal.purchaseButton.click();
+@@ -511,9 +511,9 @@
+     await placeOrderModal.fill({ ...order.valid, name: payload });
+     const dialogs = collectDialogs(page);
+     const c = await placeOrderModal.purchase();
+-    await page.waitForTimeout(1_000); // give an injected handler a chance to fire
++    await page.waitForTimeout(1_000); // Allow time for the injected event handler to run before checking the alerts.
+     expect(dialogs, 'no script must run').toEqual([]);
+-    expect(c.name).toBe(payload); // rendered as plain text
++    expect(c.name).toBe(payload); // The payload should appear as plain text.
+   });
+ 
+   test('Case_43: Cart handles a large number of items', { tag: '@regression' }, async ({ loggedInPage, api, user, cartPage }) => {
+@@ -561,8 +561,8 @@
+     await cart2.open();
+     await cart2.expectItemCount(1);
+ 
+-    await cartPage.deleteItem(S6.name); // tab 1 deletes first
+-    await cart2.deleteItem(S6.name); // tab 2 deletes the stale row
++    await cartPage.deleteItem(S6.name); // Delete the item in the first tab.
++    await cart2.deleteItem(S6.name); // Try deleting the same item from the second tab’s stale cart.
+     await cart2.expectItemCount(0);
+     expect(dialogs).toEqual([]);
+     expect(pageErrors).toEqual([]);
+--- a/tests/e2e/purchase.spec.ts
++++ b/tests/e2e/purchase.spec.ts
+@@ -1,7 +1,7 @@
+ /**
+- * Automation of sheet "E2E" in DemoBlaze_TestCases_EN.xlsx.
+- * Each test title starts with the TestCaseID from the sheet (Case_xx).
+- * Case_10 (cross-browser / mobile) = Case_01 executed by every browser + mobile project.
++ * Automated tests for the "E2E" sheet in DemoBlaze_TestCases_EN.xlsx.
++ * Test titles keep the sheet’s case IDs (Case_xx) for traceability.
++ * Case_10 is covered by running Case_01 across the desktop and mobile browser projects.
+  */
+ import { test, expect, setAuthCookie } from '../../src/fixtures/test-fixtures';
+ import { HomePage } from '../../src/pages/HomePage';
+@@ -178,7 +178,7 @@
+     await productPage.addToCart();
+     await productPage.logout();
+ 
+-    // "Close the browser" and start a new session: fresh browser context, log in through the UI
++    // Simulate a new browser session with a fresh context, then log in through the UI.
+     const context = await browser.newContext({ baseURL: env.baseUrl });
+     const page = await context.newPage();
+     const home = new HomePage(page);
+@@ -237,7 +237,7 @@
+     await productPage.open(S6.id);
+     await productPage.addToCart();
+ 
+-    await setAuthCookie(page.context(), 'abc123'); // session becomes invalid
++    await setAuthCookie(page.context(), 'abc123'); // Replace the session token with an invalid value.
+     const dialogs = collectDialogs(page);
+     await page.goto('/cart.html');
+     await expect.poll(() => dialogs).toContain(MSG.tokenMalformed);
+--- a/tests/perf/page-load.spec.ts
++++ b/tests/perf/page-load.spec.ts
+@@ -2,8 +2,8 @@
+ import { env } from '../../config/env';
+ 
+ /**
+- * Lightweight performance check using the browser Navigation Timing API.
+- * For real load testing, plug in k6 / Artillery - this only guards against obvious regressions.
++ * Checks page load times against a budget using the browser Navigation Timing API.
++ * This catches large timing regressions. Use a load-testing tool to measure behavior under traffic.
+  */
+ const pages = [
+   { name: 'Home', path: '/' },
+--- a/.env.example
++++ b/.env.example
+@@ -1,9 +1,9 @@
+-# Copy to .env and adjust if needed
++# Copy this file to .env to override the default settings.
+ BASE_URL=https://www.demoblaze.com
+ API_URL=https://api.demoblaze.com
+-# Default password used for auto-generated test users
++# Password for test accounts created automatically.
+ TEST_PASSWORD=Test@123
+-# Performance budget for Home page load (ms)
++# Maximum page load time in milliseconds for all performance checks.
+ PERF_MAX_LOAD_MS=8000
+-# Number of parallel workers (DemoBlaze is slow/rate-sensitive, keep it low)
++# Keep the worker count low to limit concurrent requests to the shared demo site.
+ WORKERS=2
+--- a/.github/workflows/playwright.yml
++++ b/.github/workflows/playwright.yml
+@@ -11,7 +11,7 @@
+         required: false
+         default: ''
+   schedule:
+-    - cron: '0 1 * * *' # nightly regression (08:00 ICT)
++    - cron: '0 1 * * *' # Run daily at 08:00 ICT (01:00 UTC).
+ 
+ jobs:
+   api:
+--- a/README.md
++++ b/README.md
+@@ -18,26 +18,26 @@
+ 
+ ```
+ .
+-├── .github/workflows/playwright.yml   # CI pipeline (api, ui matrix, perf)
+-├── config/env.ts                      # Typed config loaded from .env
++├── .github/workflows/playwright.yml   # CI jobs for API, browser, and performance tests
++├── config/env.ts                      # Environment settings loaded from .env with defaults
+ ├── src/
+-│   ├── api/DemoblazeApi.ts            # API client (signup, login, cart) - test data setup + API tests
+-│   ├── fixtures/test-fixtures.ts      # Injects page objects, fresh user, pre-authenticated page
+-│   ├── pages/                         # Page Objects
+-│   │   ├── BasePage.ts                # Navbar, login-state assertions, native alert handling
++│   ├── api/DemoblazeApi.ts            # API client for account setup, cart operations, and API tests
++│   ├── fixtures/test-fixtures.ts      # Page objects, test accounts, and an authenticated page
++│   ├── pages/                         # Page objects
++│   │   ├── BasePage.ts                # Shared navigation, login checks, and browser alert handling
+ │   │   ├── HomePage.ts
+ │   │   ├── LoginModal.ts
+ │   │   ├── ProductPage.ts
+ │   │   ├── CartPage.ts
+-│   │   └── PlaceOrderModal.ts         # Order form + SweetAlert confirmation parsing
+-│   └── utils/                         # Data generators, dialog helper
+-├── test-data/                         # Products, order data, expected messages
++│   │   └── PlaceOrderModal.ts         # Order form actions and confirmation details
++│   └── utils/                         # Test data generators, alert helpers, and known bug markers
++├── test-data/                         # Product data, order data, and expected messages
+ ├── tests/
+-│   ├── ui/login.spec.ts               # Login: positive, negative, data-driven validation
+-│   ├── ui/cart.spec.ts                # Add to cart, totals, delete, persistence, order validation
+-│   ├── e2e/purchase.spec.ts           # Full user journeys (Login > Cart > Place order)
+-│   ├── api/auth.api.spec.ts           # API tests for auth + cart endpoints
+-│   └── perf/page-load.spec.ts         # Navigation Timing budget checks
++│   ├── ui/login.spec.ts               # Login flows, invalid credentials, and field validation
++│   ├── ui/cart.spec.ts                # Cart contents, totals, persistence, and checkout validation
++│   ├── e2e/purchase.spec.ts           # Purchase journeys from login through checkout
++│   ├── api/auth.api.spec.ts           # API tests for authentication and cart endpoints
++│   └── perf/page-load.spec.ts         # Page load time checks using Navigation Timing
+ ├── playwright.config.ts
+ └── .env.example
+ ```
+@@ -64,9 +64,9 @@
+ ```bash
+ git clone <your-repo-url>
+ cd demoblaze-playwright
+-npm ci                      # or: npm install
+-npx playwright install      # download browsers (add --with-deps on Linux)
+-cp .env.example .env        # optional, defaults work out of the box
++npm ci                      # Or use npm install.
++npx playwright install      # Install browsers; add --with-deps on Linux.
++cp .env.example .env        # Optional: copy this file to customize the defaults.
+ ```
+ 
+ ## Running the tests
+@@ -92,9 +92,9 @@
+ Other useful options:
+ 
+ ```bash
+-npx playwright test --grep @known-bug           # only documented bugs
+-npx playwright test --ui                        # interactive UI mode
+-npx playwright test --repeat-each=5 --project=chromium   # flakiness check
++npx playwright test --grep @known-bug           # Run tests marked as known bugs.
++npx playwright test --ui                        # Open Playwright’s interactive test runner.
++npx playwright test --repeat-each=5 --project=chromium   # Repeat tests to check for intermittent failures.
+ ```
+ 
+ ## Reports

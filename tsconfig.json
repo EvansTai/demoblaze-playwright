@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": { "@pages/*": ["src/pages/*"], "@api/*": ["src/api/*"], "@fixtures/*": ["src/fixtures/*"], "@utils/*": ["src/utils/*"], "@config/*": ["config/*"], "@data/*": ["test-data/*"] }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

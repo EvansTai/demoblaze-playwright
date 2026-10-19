@@ -1,0 +1,28 @@
+{
+  "name": "demoblaze-playwright",
+  "version": "1.0.0",
+  "description": "E2E automation framework for DemoBlaze (Playwright + TypeScript)",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:regression": "playwright test --grep @regression",
+    "test:chromium": "playwright test --project=chromium",
+    "test:api": "playwright test --project=api",
+    "test:perf": "playwright test --project=perf",
+    "test:mobile": "playwright test --project=mobile-chrome --project=mobile-safari",
+    "test:headed": "playwright test --project=chromium --headed",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "test:known-bugs": "playwright test --grep @known-bug --project=chromium",
+    "test:login": "playwright test tests/ui/login.spec.ts --project=chromium",
+    "test:cart": "playwright test tests/ui/cart.spec.ts --project=chromium",
+    "test:e2e": "playwright test tests/e2e --project=chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "samsungS6": { "id": 1, "name": "Samsung galaxy s6", "price": 360, "category": "Phones" },
+  "nokiaLumia": { "name": "Nokia lumia 1520", "category": "Phones" },
+  "sonyVaioI5": { "name": "Sony vaio i5", "category": "Laptops" },
+  "appleMonitor": { "name": "Apple monitor 24", "category": "Monitors" }
+}
