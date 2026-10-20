@@ -4,32 +4,43 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '0 1 * * *' # nightly full run (08:00 ICT)
   workflow_dispatch:
     inputs:
       grep:
-        description: 'Tag filter, e.g. @smoke or @regression (empty = all)'
+        description: 'Tag filter for the regression job, e.g. @login or @cart (empty = all)'
         required: false
         default: ''
-  schedule:
-    - cron: '0 1 * * *' # Run daily at 08:00 ICT (01:00 UTC).
+
+env:
+  CI: true
+  WORKERS: 2
 
 jobs:
   api:
+    name: API tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with:
+          node-version: 20
+          cache: npm
       - run: npm ci
       - run: npx playwright test --project=api
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: report-api, path: playwright-report/, retention-days: 14 }
+        with:
+          name: report-api
+          path: playwright-report/
+          retention-days: 14
 
-  ui:
+  smoke:
+    name: Smoke (${{ matrix.project }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -37,26 +48,65 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with:
+          node-version: 20
+          cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps
-      - name: Run tests
-        run: npx playwright test --project=${{ matrix.project }} ${{ github.event.inputs.grep && format('--grep {0}', github.event.inputs.grep) || '' }}
+      - run: npx playwright test --project=${{ matrix.project }} --grep @smoke
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: report-${{ matrix.project }}, path: playwright-report/, retention-days: 14 }
+        with:
+          name: report-smoke-${{ matrix.project }}
+          path: playwright-report/
+          retention-days: 14
+
+  regression:
+    name: Regression (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run regression
+        env:
+          GREP: ${{ github.event.inputs.grep }}
+        run: |
+          if [ -n "$GREP" ]; then
+            npx playwright test --project=chromium --grep "$GREP"
+          else
+            npx playwright test --project=chromium
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-regression-chromium
+          path: playwright-report/
+          retention-days: 14
 
   perf:
+    name: Performance
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with:
+          node-version: 20
+          cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test --project=perf
-        env: { PERF_MAX_LOAD_MS: 10000 }
+        env:
+          PERF_MAX_LOAD_MS: 10000
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: report-perf, path: playwright-report/, retention-days: 14 }
+        with:
+          name: report-perf
+          path: playwright-report/
+          retention-days: 14

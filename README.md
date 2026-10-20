@@ -1,6 +1,10 @@
 # DemoBlaze E2E Automation (Playwright + TypeScript)
 
+[![Playwright Tests](https://github.com/EvansTai/demoblaze-playwright/actions/workflows/playwright.yml/badge.svg)](https://github.com/EvansTai/demoblaze-playwright/actions/workflows/playwright.yml)
+
 Automation framework and demo scripts for the **Login** and **Shopping Cart** features of [DemoBlaze](https://www.demoblaze.com/).
+
+**Test case suite (Excel):** [`docs/DemoBlaze_TestCases_EN.xlsx`](docs/DemoBlaze_TestCases_EN.xlsx) - sheets Login, Shopping Cart, E2E.
 
 ## Tech stack
 
@@ -105,17 +109,20 @@ npx playwright test --repeat-each=5 --project=chromium   # Repeat tests to check
 
 ## CI/CD
 
-`.github/workflows/playwright.yml` runs on push to `main`, on pull requests, nightly at 08:00 (ICT) and manually (`workflow_dispatch` with an optional tag filter):
+`.github/workflows/playwright.yml` runs on push to `main`, on pull requests, nightly at 08:00 (ICT) and manually (`workflow_dispatch`, with an optional tag filter such as `@login` or `@cart` for the regression job):
 
-- `api` job - API tests
-- `ui` job - matrix: chromium, firefox, webkit, mobile-chrome, mobile-safari
-- `perf` job - performance budget checks
+| Job | What it runs |
+|---|---|
+| `API tests` | All API tests (`--project=api`) |
+| `Smoke` | `@smoke` tests on a matrix: chromium, firefox, webkit, mobile-chrome, mobile-safari |
+| `Regression (chromium)` | Full UI + E2E suite on Chromium |
+| `Performance` | Page-load budget checks |
 
-Each job uploads its HTML report as a build artifact. The same `npx playwright test --project=<name>` commands work in Jenkins or GitLab CI.
+Each job uploads its HTML report as a build artifact (Actions run page > Artifacts). The same `npx playwright test --project=<name>` commands work in Jenkins or GitLab CI.
 
 ## Test case traceability
 
-Every automated test is named after its TestCaseID in `DemoBlaze_TestCases_EN.xlsx`:
+Every automated test is named after its TestCaseID in [`docs/DemoBlaze_TestCases_EN.xlsx`](docs/DemoBlaze_TestCases_EN.xlsx):
 
 | Sheet | Spec file | Coverage |
 |---|---|---|
